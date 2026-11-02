@@ -21,7 +21,7 @@ const UFO_LIFT_MS    = 440;   // droplet rises into beam
 const UFO_MOVE_MS    = 660;   // UFO glides sideways past cloud edge
 const UFO_RELEASE_MS = 360;   // beam fades, UFO drifts up, droplet released
 const UFO_HOVER_GAP  = 92;    // world-px: UFO centre above droplet while hovering
-const UFO_LIFT_PX    = 74;    // world-px: how far droplet rises while in beam
+const UFO_LIFT_PX    = 40;    // world-px: how far droplet rises while in beam (stays below the hull)
 const UFO_SIDE_PAD   = 24;    // extra px past cloud edge before dropping
 
 // ── Definitions ───────────────────────────────────────────────────────────────
@@ -6679,34 +6679,64 @@ function drawUFOBeam() {
   const ufo = state.ufo;
   if (!ufo.active || ufo.beamAlpha <= 0) return;
 
+  const now   = performance.now();
   const ux    = ufo.x;
-  const uy    = toScreenY(ufo.worldY);
-  const bx    = ux;
-  const by    = uy + 15;
+  const by    = toScreenY(ufo.worldY) + 14;          // emitter under the hull
   const dx    = state.droplet.x;
-  const dy    = toScreenY(state.droplet.worldY);
-  const pulse = 0.65 + 0.35 * Math.sin(Date.now() / 75);
-  const a     = ufo.beamAlpha * pulse;
+  const dy    = toScreenY(state.droplet.worldY) + DROPLET_R * 0.9;
+  const a     = ufo.beamAlpha * (0.85 + 0.15 * Math.sin(now / 90));
+  const topW  = 13, botW = DROPLET_R * 1.7;
 
-  const grad = ctx.createLinearGradient(bx, by, bx, dy);
-  grad.addColorStop(0, `rgba(100, 255, 130, ${a * 0.80})`);
-  grad.addColorStop(1, `rgba(100, 255, 130, ${a * 0.07})`);
-
+  ctx.save();
+  // cone
   ctx.beginPath();
-  ctx.moveTo(bx - 20, by);
-  ctx.lineTo(bx + 20, by);
-  ctx.lineTo(dx + DROPLET_R * 0.85, dy);
-  ctx.lineTo(dx - DROPLET_R * 0.85, dy);
+  ctx.moveTo(ux - topW, by);
+  ctx.lineTo(ux + topW, by);
+  ctx.lineTo(dx + botW, dy);
+  ctx.lineTo(dx - botW, dy);
   ctx.closePath();
-  ctx.fillStyle = grad;
+  const g = ctx.createLinearGradient(0, by, 0, dy);
+  g.addColorStop(0, `rgba(150,255,190,${0.55 * a})`);
+  g.addColorStop(1, `rgba(150,255,190,${0.12 * a})`);
+  ctx.fillStyle = g;
   ctx.fill();
-
-  // Glow ring around droplet
+  ctx.save();
+  ctx.clip();
+  // bright edges
+  ctx.strokeStyle = `rgba(210,255,225,${0.55 * a})`;
+  ctx.lineWidth   = 2;
   ctx.beginPath();
-  ctx.arc(dx, dy, DROPLET_R * 1.45, 0, Math.PI * 2);
-  ctx.strokeStyle = `rgba(100, 255, 130, ${ufo.beamAlpha * 0.40 * pulse})`;
-  ctx.lineWidth   = 4;
+  ctx.moveTo(ux - topW, by); ctx.lineTo(dx - botW, dy);
+  ctx.moveTo(ux + topW, by); ctx.lineTo(dx + botW, dy);
   ctx.stroke();
+  // rings travelling up the beam
+  const len = dy - by;
+  for (let k = 0; k < 4; k++) {
+    const t  = 1 - ((now / 900 + k / 4) % 1);
+    const y  = by + len * t;
+    const cx = lerpVal(ux, dx, t);
+    const hw = lerpVal(topW, botW, t);
+    ctx.strokeStyle = `rgba(230,255,235,${0.6 * a * Math.sin(t * Math.PI)})`;
+    ctx.lineWidth   = 1.6;
+    ctx.beginPath(); ctx.ellipse(cx, y, hw, hw * 0.22, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  // motes rising
+  for (let k = 0; k < 7; k++) {
+    const t  = 1 - ((now / 1300 + k * 0.137) % 1);
+    const cx = lerpVal(ux, dx, t) + Math.sin(k * 2.3 + now / 400) * lerpVal(topW, botW, t) * 0.6;
+    ctx.fillStyle = `rgba(255,255,255,${0.8 * a * Math.sin(t * Math.PI)})`;
+    ctx.beginPath(); ctx.arc(cx, by + len * t, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // glow hugging the droplet
+  const halo = ctx.createRadialGradient(state.droplet.x, dy - DROPLET_R, DROPLET_R * 0.6,
+                                        state.droplet.x, dy - DROPLET_R, DROPLET_R * 2);
+  halo.addColorStop(0, `rgba(150,255,190,${0.35 * a})`);
+  halo.addColorStop(1, 'rgba(150,255,190,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(state.droplet.x, dy - DROPLET_R, DROPLET_R * 2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 // ── Draw the UFO disc + dome only (call AFTER drawDroplet so it sits on top)
@@ -6714,61 +6744,97 @@ function drawUFOBody() {
   const ufo = state.ufo;
   if (!ufo.active) return;
 
-  const ux = ufo.x;
-  const uy = toScreenY(ufo.worldY);
+  const now = performance.now();
+  const ux  = ufo.x;
+  const uy  = toScreenY(ufo.worldY) + Math.sin(now / 260) * 2;   // hover bob
+
+  // banks into the sideways glide
+  let tilt = 0;
+  if (ufo.phase === 'moving' && ufo.duration > 0) {
+    const p = 1 - ufo.timer / ufo.duration;
+    tilt = Math.sin(p * Math.PI) * 0.16 * Math.sign(ufo.targetX - ufo.startX);
+  }
 
   ctx.save();
   ctx.translate(ux, uy);
+  ctx.rotate(tilt);
 
-  // Shadow under disc
+  // glass dome, with the pilot inside
+  ctx.save();
   ctx.beginPath();
-  ctx.ellipse(2, 18, 40, 9, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.ellipse(0, -6, 23, 25, 0, Math.PI, 0);
+  ctx.closePath();
+  const glass = ctx.createLinearGradient(0, -31, 0, -6);
+  glass.addColorStop(0, 'rgba(190,235,255,0.85)');
+  glass.addColorStop(1, 'rgba(90,170,220,0.75)');
+  ctx.fillStyle = glass;
   ctx.fill();
-
-  // Saucer disc
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 46, 14, 0, 0, Math.PI * 2);
-  ctx.fillStyle   = '#CFD8DC';
-  ctx.fill();
-  ctx.strokeStyle = '#78909C';
-  ctx.lineWidth   = 2;
-  ctx.stroke();
-
-  // Metallic sheen on disc
-  const sheen = ctx.createLinearGradient(-46, -14, 46, 14);
-  sheen.addColorStop(0,    'rgba(255,255,255,0.32)');
-  sheen.addColorStop(0.45, 'rgba(255,255,255,0.00)');
-  sheen.addColorStop(1,    'rgba(0,0,0,0.12)');
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 46, 14, 0, 0, Math.PI * 2);
-  ctx.fillStyle = sheen;
-  ctx.fill();
-
-  // Dome (upper half-ellipse)
-  ctx.beginPath();
-  ctx.ellipse(0, -2, 26, 22, 0, Math.PI, 0);
-  ctx.fillStyle   = '#4FC3F7';
-  ctx.fill();
-  ctx.strokeStyle = '#0288D1';
-  ctx.lineWidth   = 1.5;
-  ctx.stroke();
-
-  // Dome glare
-  ctx.beginPath();
-  ctx.ellipse(-7, -14, 9, 5, -0.4, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.50)';
-  ctx.fill();
-
-  // Underbelly lights (blinking RGB)
-  const now = Date.now();
-  [[-20, 8], [0, 12], [20, 8]].forEach(([lx, ly], i) => {
-    const on = Math.sin(now / 120 + i * 1.15) > 0;
-    ctx.beginPath();
-    ctx.arc(lx, ly, 5, 0, Math.PI * 2);
-    ctx.fillStyle = on ? ['#FF5252', '#FFEB3B', '#69F0AE'][i] : '#37474F';
-    ctx.fill();
+  ctx.clip();
+  // pilot: round green head with two big eyes, looking down at Stilla
+  const look = Math.max(-1, Math.min(1, (state.droplet.x - ux) / 40));
+  ctx.fillStyle = '#7ED957';
+  ctx.beginPath(); ctx.ellipse(0, -16, 9.5, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(-3.5, -9, 7, 4);
+  ctx.strokeStyle = '#5DB33A'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-3, -23); ctx.lineTo(-6, -27); ctx.moveTo(3, -23); ctx.lineTo(6, -27); ctx.stroke();
+  ctx.fillStyle = '#5DB33A';
+  ctx.beginPath(); ctx.moveTo(-4.2, -27.5); ctx.arc(-6, -27.5, 1.8, 0, Math.PI * 2); ctx.moveTo(7.8, -27.5); ctx.arc(6, -27.5, 1.8, 0, Math.PI * 2); ctx.fill();
+  const blink = (now % 2900) < 120;
+  [-1, 1].forEach(s => {
+    ctx.fillStyle = '#10202C';
+    ctx.beginPath(); ctx.ellipse(s * 4 + look, -15.5, 3, blink ? 0.5 : 3.8, s * 0.25, 0, Math.PI * 2); ctx.fill();
+    if (!blink) {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(s * 4 + look - 1, -17, 1, 0, Math.PI * 2); ctx.fill();
+    }
   });
+  ctx.restore();
+  // dome glare and rim
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath(); ctx.ellipse(-10, -20, 6, 3, -0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(40,90,130,0.55)'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.ellipse(0, -6, 23, 25, 0, Math.PI, 0); ctx.stroke();
+
+  // hull: upper deck (light) and lower belly (darker), metallic
+  const hull = ctx.createLinearGradient(0, -9, 0, 13);
+  hull.addColorStop(0,    '#F2F6FA');
+  hull.addColorStop(0.45, '#B9C6D2');
+  hull.addColorStop(0.55, '#8A9AAA');
+  hull.addColorStop(1,    '#5D6B79');
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 48, 12, 0, 0, Math.PI * 2);
+  ctx.fillStyle = hull;
+  ctx.fill();
+  ctx.strokeStyle = '#4A5866'; ctx.lineWidth = 1.5; ctx.stroke();
+  // deck seam
+  ctx.strokeStyle = 'rgba(70,85,100,0.55)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, 0, 40, 6, 0, 0, Math.PI); ctx.stroke();
+  // highlight along the top edge
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(0, 2, 44, 9.5, 0, Math.PI * 1.12, Math.PI * 1.55); ctx.stroke();
+
+  // running lights chasing around the rim
+  const N = 9;
+  for (let i = 0; i < N; i++) {
+    const ang = Math.PI * (0.08 + 0.84 * i / (N - 1));     // front half of the rim
+    const lx  = Math.cos(ang) * 40, ly = 3 + Math.sin(ang) * 6.5;
+    const on  = ((Math.floor(now / 110) - i) % N + N) % N < 2;
+    ctx.fillStyle = on ? '#FFE680' : '#6E5A2A';
+    ctx.beginPath(); ctx.arc(lx, ly, on ? 2.6 : 2, 0, Math.PI * 2); ctx.fill();
+    if (on) {
+      ctx.fillStyle = 'rgba(255,230,128,0.35)';
+      ctx.beginPath(); ctx.arc(lx, ly, 5.5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // emitter under the belly, glowing while the beam is on
+  const e = ufo.beamAlpha;
+  ctx.fillStyle = '#3E4A56';
+  ctx.beginPath(); ctx.ellipse(0, 13, 13, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+  if (e > 0) {
+    ctx.fillStyle = `rgba(170,255,200,${0.9 * e})`;
+    ctx.beginPath(); ctx.ellipse(0, 13.5, 10, 2.6, 0, 0, Math.PI * 2); ctx.fill();
+  }
 
   ctx.restore();
 }
