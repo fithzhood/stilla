@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#6EC6F0">
+  <title>Stilla</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:ital,wght@0,600;0,700;0,800;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="stilla.css">
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Menu overlay -->
+  <div id="menu" class="overlay">
+    <div class="menu-card">
+      <header class="menu-head">
+        <h1 class="menu-title">Stilla</h1>
+        <p class="menu-subtitle">Tira indietro la goccia e lasciala andare. La regge solo la nuvola con il pezzo giusto della definizione.</p>
+      </header>
+
+      <div class="global-btns">
+        <button id="btn-select-all">Seleziona tutti</button>
+        <button id="btn-deselect-all">Deseleziona tutti</button>
+      </div>
+
+      <div id="selection-screen">
+        <!-- populated by buildSelectionUI() -->
+      </div>
+
+      <div class="menu-foot">
+        <p id="start-hint" class="start-hint">Seleziona almeno una definizione</p>
+        <button id="btn-start" class="btn-primary" disabled>Inizia</button>
+        <div class="menu-foot-row">
+          <button id="btn-browse" class="btn-browse">Leggi le definizioni</button>
+          <label for="json-import" class="btn-secondary">Carica file JSON</label>
+          <input type="file" id="json-import" accept=".json">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reader overlay -->
+  <div id="reader" class="overlay hidden">
+    <div class="menu-card">
+      <div class="reader-header">
+        <button id="btn-reader-close" class="btn-reader-close">Torna al menu</button>
+        <h2 class="reader-title">Definizioni</h2>
+      </div>
+      <div id="reader-content"></div>
+    </div>
+  </div>
+
+  <!-- Menu button during play -->
+  <button id="btn-settings" class="settings-btn hidden" aria-label="Apri il menu">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/>
+    </svg>
+  </button>
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="stilla.js"></script>
+</body>
+</html>
