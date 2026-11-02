@@ -5133,7 +5133,7 @@ function cloudPath(cx, cy, w, h, seed = 0) {
     const px   = cx - hw * 0.68 + t * hw * 1.36;
     const arch = Math.sin(t * Math.PI);
     const jit  = Math.sin(seed * 3.1 + i * 2.17) * 0.12;
-    const pr   = hh * (0.5 + arch * 0.32 + jit);
+    const pr   = Math.min(hh * (0.5 + arch * 0.32 + jit), hw - Math.abs(px - cx));   // never wider than w
     const py   = cy + hh * 0.12 - arch * hh * 0.42 + jit * hh * 0.3;
     ctx.moveTo(px + pr, py);
     ctx.arc(px, py, pr, 0, Math.PI * 2);
@@ -5698,51 +5698,105 @@ function drawBirds() {
     const sy = toScreenY(bird.worldY);
     if (sy < -bird.r * 4 || sy > VH + bird.r * 4) return;
 
-    const flap   = Math.sin(bird.wingPhase);
-    const wFlap  = flap * bird.r * 0.72;
+    const lift   = Math.sin(bird.wingPhase);          // +1 wings up, -1 wings down
     const facing = bird.vx >= 0 ? 1 : -1;
     const r      = bird.r;
 
     ctx.save();
-    ctx.globalAlpha = 0.90;
+    // Local frame: unit = r, facing right; the body bobs up on the downstroke
+    ctx.translate(bird.x, sy - lift * r * 0.06);
+    ctx.scale(facing * r, r);
+    ctx.lineJoin = 'round';
+    ctx.lineCap  = 'round';
+    const rim = 'rgba(255,255,255,0.22)';             // keeps the crow readable on the night sky
 
-    // Wings (behind body)
-    ctx.fillStyle = '#37474F';
-    [-1, 1].forEach(side => {
-      ctx.beginPath();
-      ctx.moveTo(bird.x, sy + r * 0.08);
-      ctx.quadraticCurveTo(bird.x + side * r * 0.55, sy - wFlap * 0.6,
-                           bird.x + side * r,         sy - wFlap);
-      ctx.quadraticCurveTo(bird.x + side * r * 0.55, sy - wFlap * 0.15 + r * 0.18,
-                           bird.x,                    sy + r * 0.18);
-      ctx.closePath(); ctx.fill();
-    });
+    // Wing: broad arm from the shoulder, four splayed primaries at the tip,
+    // then a curved trailing edge back to the root
+    function wing(l, size, fill, outline) {
+      const sx = 0.22, sy0 = -0.14;                   // shoulder
+      const rx = -0.32, ry = 0.06;                    // trailing root
+      const tx = -0.5 * size, ty = -0.1 - l * 0.85 * size;
+      const tipA   = Math.atan2(ty - sy0, tx - sx);   // shoulder → tip
+      const trailA = Math.atan2(ry - ty, rx - tx);    // tip → root
+      let turn = trailA - tipA;
+      while (turn >  Math.PI) turn -= Math.PI * 2;
+      while (turn < -Math.PI) turn += Math.PI * 2;
 
-    // Body
-    ctx.fillStyle = '#263238';
+      function shape() {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy0);
+        ctx.quadraticCurveTo(0.02, sy0 + (ty - sy0) * 0.85 - 0.12 * size, tx, ty);
+        ctx.quadraticCurveTo(lerpVal(tx, rx, 0.6), lerpVal(ty, ry, 0.6) + 0.1, rx, ry);
+        ctx.closePath();
+        // primaries: a fan of long feathers spreading from the tip toward the trailing edge
+        for (let k = 0; k < 4; k++) {
+          const t  = 0.04 + k * 0.12;
+          const bx = lerpVal(tx, rx, t), by = lerpVal(ty, ry, t);
+          const a  = tipA + turn * (0.08 + k * 0.16);
+          const L  = (0.36 - k * 0.05) * size;
+          const ex = bx + Math.cos(a) * L * 0.5, ey = by + Math.sin(a) * L * 0.5;
+          ctx.moveTo(ex + Math.cos(a) * L * 0.55, ey + Math.sin(a) * L * 0.55);
+          ctx.ellipse(ex, ey, L * 0.55, 0.06 * size, a, 0, Math.PI * 2);
+        }
+      }
+      if (outline) {                                  // outline under the fill: only the silhouette shows
+        shape();
+        ctx.lineWidth   = 0.09;
+        ctx.strokeStyle = rim;
+        ctx.stroke();
+      }
+      shape();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
+    // far wing, slightly behind in phase
+    wing(Math.sin(bird.wingPhase - 0.5) * 0.85, 0.82, '#10141A', true);
+
+    // tail fan
     ctx.beginPath();
-    ctx.ellipse(bird.x + facing * r * 0.10, sy, r * 0.44, r * 0.26,
-                facing * 0.18, 0, Math.PI * 2);
+    ctx.moveTo(-0.38, -0.08);
+    ctx.lineTo(-0.98, -0.2);
+    ctx.quadraticCurveTo(-1.08, 0.0, -0.98, 0.16);
+    ctx.lineTo(-0.38, 0.1);
+    ctx.closePath();
+    ctx.lineWidth = 0.09; ctx.strokeStyle = rim; ctx.stroke();
+    ctx.fillStyle = '#161B22';
     ctx.fill();
 
-    // Head
+    // body with a blue-violet sheen on the back
+    const g = ctx.createLinearGradient(0, -0.32, 0, 0.3);
+    g.addColorStop(0, '#3B4758');
+    g.addColorStop(1, '#0E1217');
     ctx.beginPath();
-    ctx.arc(bird.x + facing * r * 0.48, sy - r * 0.10, r * 0.22, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 0.52, 0.29, -0.08, 0, Math.PI * 2);
+    ctx.moveTo(0.74, -0.18);
+    ctx.arc(0.5, -0.18, 0.24, 0, Math.PI * 2);
+    ctx.lineWidth = 0.09; ctx.strokeStyle = rim; ctx.stroke();   // under the fill: silhouette only
+    ctx.fillStyle = g;
     ctx.fill();
+    ctx.fillStyle = 'rgba(120,150,215,0.30)';
+    ctx.beginPath(); ctx.ellipse(-0.05, -0.15, 0.32, 0.08, -0.12, 0, Math.PI * 2); ctx.fill();
 
-    // Eye
-    ctx.fillStyle = 'white';
+    // beak: heavy and slightly hooked
     ctx.beginPath();
-    ctx.arc(bird.x + facing * r * 0.54, sy - r * 0.14, r * 0.08, 0, Math.PI * 2);
+    ctx.moveTo(0.68, -0.27);
+    ctx.quadraticCurveTo(0.9, -0.26, 1.02, -0.13);
+    ctx.quadraticCurveTo(0.88, -0.1, 0.7, -0.09);
+    ctx.closePath();
+    ctx.fillStyle = '#2C323A';
     ctx.fill();
+    ctx.lineWidth = 0.035; ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.moveTo(0.72, -0.24); ctx.quadraticCurveTo(0.88, -0.22, 0.98, -0.14); ctx.stroke();
 
-    // Beak
-    ctx.fillStyle = '#FF8F00';
-    ctx.beginPath();
-    ctx.moveTo(bird.x + facing * r * 0.68, sy - r * 0.06);
-    ctx.lineTo(bird.x + facing * r * 0.90, sy);
-    ctx.lineTo(bird.x + facing * r * 0.68, sy + r * 0.06);
-    ctx.closePath(); ctx.fill();
+    // eye
+    ctx.fillStyle = '#E9EEF4';
+    ctx.beginPath(); ctx.arc(0.56, -0.25, 0.075, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0B0E12';
+    ctx.beginPath(); ctx.arc(0.575, -0.25, 0.045, 0, Math.PI * 2); ctx.fill();
+
+    // near wing, over the body
+    wing(lift, 1, '#2A3340', lift > 0.25 || lift < -0.25);
 
     ctx.restore();
   });
@@ -6275,10 +6329,26 @@ function resetDropletToStart() {
   d.squashTimer = 0;
 }
 
+// Follows the droplet, but rises further when needed so the row to reach next
+// sits below the prompt panel instead of under it. The droplet stays on screen.
+function cameraTarget() {
+  const d = state.droplet;
+  let cam = d.worldY - VH * 0.65;
+  if (state.phase !== 'win' && state.phase !== 'ufo') {
+    const next = state.clouds.filter(c =>
+      c.defIndex === state.currentDefIndex && c.row === state.currentFragmentIndex);
+    if (next.length) {
+      const top = Math.min(...next.map(c => c.worldY - c.h * 0.75));
+      const hud = (state.hudH || 110) + 14;
+      cam = Math.min(cam, top - hud);
+      cam = Math.max(cam, d.worldY + DROPLET_R + 70 - VH);
+    }
+  }
+  return Math.max(0, Math.min(cam, totalWorldH() - VH));
+}
+
 function snapCameraToDroplet() {
-  state.cameraY = Math.max(0,
-    Math.min(state.droplet.worldY - VH * 0.65,
-             totalWorldH() - VH));
+  state.cameraY = cameraTarget();
 }
 
 function fullReset() {
@@ -6326,9 +6396,7 @@ function fullReset() {
 
 // ── Update ────────────────────────────────────────────────────────────────────
 function updateCamera(dt) {
-  const target = Math.max(0,
-    Math.min(state.droplet.worldY - VH * 0.65,
-             totalWorldH() - VH));
+  const target = cameraTarget();
   const lerpK  = Math.min(1, 0.006 * dt);
   state.cameraY += (target - state.cameraY) * lerpK;
 }
@@ -6771,7 +6839,7 @@ function gameLoop(ts) {
 
   if (state.phase === 'flying' || state.phase === 'resting' ||
       state.phase === 'win'    || state.phase === 'gameover' ||
-      state.phase === 'ufo') {
+      state.phase === 'ufo'    || (state.phase === 'aiming' && !state.drag.active)) {
     updateCamera(dt);
   }
 
@@ -7187,8 +7255,10 @@ document.getElementById('btn-deselect-all').addEventListener('click', () => {
   buildSelectionUI();
 });
 
-document.getElementById('btn-start').addEventListener('click', () => {
+document.getElementById('btn-start').addEventListener('click', async () => {
   if (state.selectedIds.size === 0) return;
+  // cloud widths are measured with the cloud font: wait until it is loaded
+  try { await document.fonts.load(CLOUD_FONT); } catch (e) { /* offline: system font */ }
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('btn-settings').classList.remove('hidden');
 
