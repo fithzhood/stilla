@@ -5573,13 +5573,6 @@ function drawDroplet(sx, sy, scaleX, scaleY) {
   ctx.strokeStyle = 'rgba(10,70,130,0.75)';
   ctx.stroke();
 
-  // light bouncing inside the lower rim
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.78, 0.4, Math.PI - 0.4);
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth   = 2;
-  ctx.stroke();
-
   ctx.fillStyle = 'rgba(255,255,255,0.88)';
   ctx.beginPath(); ctx.ellipse(-r * 0.45, -r * 0.5, r * 0.15, r * 0.27, -0.5, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(-r * 0.18, -r * 0.98, r * 0.07, 0, Math.PI * 2); ctx.fill();
